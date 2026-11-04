@@ -104,6 +104,67 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 
 Use one stable value per deployment. Rotating it invalidates pending internal queue callbacks and sandbox actor context signed with the previous value.
 
+## Custom completion endpoint
+
+Set these variables to use an OpenAI-compatible endpoint for ordinary model
+completions. Restart each process after a change. The server, queue worker,
+and local CLI must use the same endpoint configuration.
+
+| Variable                 | Required               | Purpose                                                                                                 |
+| ------------------------ | ---------------------- | ------------------------------------------------------------------------------------------------------- |
+| `AI_COMPLETION_BASE_URL` | Together with the key  | API root, with the path prefix and `/v1` if the endpoint needs them. Junior does not add another `/v1`. |
+| `AI_COMPLETION_API_KEY`  | Together with the URL  | Bearer key for this endpoint only. Store it as a private runtime secret.                                |
+| `AI_COMPLETION_API`      | No                     | `chat-completions` (default) or `responses`.                                                            |
+| `AI_COMPLETION_MODELS`   | With a custom endpoint | JSON map from exact model IDs to declared capabilities, limits, and prices.                             |
+
+Leave all four unset or empty to keep Gateway-only operation. A partial
+configuration fails at startup. Junior does not switch to Gateway or another
+protocol after a custom request fails.
+
+Custom completions include the main agent, child agents, Guardian, Briefs,
+summaries, handoff, compaction, structured JSON, and image analysis. Gateway
+still owns decisions, embeddings, rerank, web search and its model request,
+image generation and editing, and text-to-speech. Keep `AI_GATEWAY_API_KEY` or
+Vercel OIDC for those operations. Junior does not share the custom key with
+Gateway or inject it into sandbox tools.
+
+Each model entry must supply `contextWindow`, `maxTokens`, `input`,
+`reasoning`, and `cost`. Context and output limits are positive integers.
+`maxTokens` cannot exceed `contextWindow`. Input capabilities must include
+`text`; add `image` only when the endpoint supports it. `reasoning` is a
+boolean. Unknown fields are errors.
+
+For a model with reasoning, Junior sends only a level requested by the call.
+If no level is set, the provider uses its default. The provider must support
+requested levels.
+
+The `cost` object requires `input`, `output`, `cacheRead`, and `cacheWrite`.
+Use nonnegative prices in USD per million tokens from your provider. Junior
+uses these declared prices for reporting and the Turn cost limit; they are
+not an invoice. Explicit zero rates cannot enforce a dollar limit for those
+components. Do not copy Gateway prices for another endpoint.
+
+Model selection stays in Model profiles and the existing model role settings.
+Every selected completion model needs an entry in the custom map, even when
+its ID also exists in Gateway. Unset roles keep their existing model IDs;
+they do not select your custom model automatically. For a text-only setup,
+set `AI_VISION_MODEL` to an empty value. Specialized Gateway model settings
+are unchanged.
+
+Junior reserves the declared custom output capacity inside the effective
+context budget. The host context limit can reduce that budget. Output
+includes reasoning tokens when the provider counts them that way. Declared
+limits do not increase the provider's actual capacity.
+
+The endpoint must support streaming, tool calls, tool results, and strict
+schema-constrained JSON. Responses requests disable provider-side storage;
+Junior keeps Conversation history. Use HTTPS outside a trusted local network.
+The URL must not contain credentials, a query, or a fragment.
+
+Use the complete example in [Local agent validation](/contribute/local-agent-validation/)
+and [Development](/contribute/development/) to configure and verify a local
+endpoint inside the devcontainer.
+
 ## Dashboard auth
 
 If you mount `@sentry/junior-dashboard`, set these browser-auth variables:

@@ -10,18 +10,163 @@ related:
   - /start-here/quickstart/
 ---
 
-## Prerequisites
+## Choose a setup
 
-- Node.js 24
-- pnpm
-- Vercel CLI
-- Slack app credentials
-- Redis configured for development
+Use the checked-in devcontainer on Linux or WSL2 to run Node inside Docker.
+Use native setup if you already have Node.js 24 and pnpm 11.8.0.
+Local CLI chat does not require Slack credentials or a web server.
 
-## Setup
+## Docker devcontainer
+
+You need Docker Engine 25 or later, Docker Compose 2.24.4 or later, and a host
+Node installation that can run the Dev Container CLI. Docker must expose
+`/var/run/docker.sock`. This setup requires Linux host networking. Docker Desktop
+on macOS and Windows is not supported by this configuration.
+
+**Use this only for trusted local development.** Access to the Docker socket
+grants root-equivalent control of your host. Junior's Docker sandboxes are
+privileged containers. A non-root container user does not remove these risks.
+
+From the repository root, set an explicit project name and start the container:
 
 ```bash
-pnpm install
+export COMPOSE_PROJECT_NAME=junior-devcontainer
+npx --yes --package @devcontainers/cli devcontainer build --workspace-folder "$PWD"
+npx --yes --package @devcontainers/cli devcontainer up --workspace-folder "$PWD"
+npx --yes --package @devcontainers/cli devcontainer exec --workspace-folder "$PWD" bash
+```
+
+Keep this project name set for later Dev Container CLI commands. For another
+checkout, choose another project name and unused ports before build and up:
+
+```bash
+export COMPOSE_PROJECT_NAME=junior-devcontainer-other
+export JUNIOR_DEV_POSTGRES_PORT=55433 JUNIOR_DEV_REDIS_PORT=56380
+export JUNIOR_DEV_S3_PORT=57071 JUNIOR_DEV_APP_PORT=3301
+```
+
+The default ports are private to host loopback:
+
+| Surface                   | Host address      |
+| ------------------------- | ----------------- |
+| Postgres 17 with pgvector | `127.0.0.1:55432` |
+| Redis                     | `127.0.0.1:56379` |
+| S3-compatible storage     | `127.0.0.1:57070` |
+| App, only when requested  | `127.0.0.1:3300`  |
+
+The container uses Node.js 24, pnpm 11.8.0, Docker CLI and Compose. Source and
+all `node_modules` directories share one bind-mounted filesystem. pnpm needs
+this layout for injected workspace dependency hardlinks. Only the pnpm store
+uses a separate Docker cache volume. Run the frozen install inside the
+container before use. Do not mix host and container dependency installs in
+one checkout; use a separate checkout if you also need native development.
+The entrypoint does not change host workspace or dependency ownership.
+
+Run Git on the host when a worktree points to Git metadata outside the mounted
+checkout. Container installs use `SKIP_INSTALL_SIMPLE_GIT_HOOKS=1` to leave host
+Git hooks unchanged.
+
+Postgres, Redis and S3 reuse the root Compose service definitions in this
+separate project. Their data volumes are separate from ordinary local
+development. The container's `COMPOSE_FILE` includes only backing services.
+Thus, a requested `pnpm dev` reuses these services without restarting its own
+container. Keep `COMPOSE_FILE` and `COMPOSE_PROJECT_NAME` unchanged inside it.
+
+### Add private configuration
+
+Put credentials in the repository's gitignored `.env.local`. Edit this file
+without printing its values or adding them to shell history. The source CLI
+and dev server read it at runtime. Do not copy secrets into `.devcontainer`,
+Docker build arguments, image layers, or checked-in examples.
+
+Gateway-only setup needs `AI_GATEWAY_API_KEY`; leave `AI_COMPLETION_*` unset.
+Gateway still handles embeddings, web search, image generation and image editing
+when you select a custom completion endpoint. These operations need Gateway
+configuration. Chat vision completions use the selected completion endpoint.
+See [Local Agent Validation](/contribute/local-agent-validation/)
+for the custom completion environment and model metadata.
+
+Linux host networking lets `http://127.0.0.1:8317/v1` reach an existing host
+proxy without changing its listener. It also lets sandbox traffic reach
+Junior's local egress proxy. Do not change the proxy or expose it on all
+interfaces. Host networking is not a network isolation boundary.
+
+### Install and use the CLI
+
+Inside the container, run:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm build
+pnpm cli -- upgrade
+pnpm cli -- check
+pnpm cli -- chat
+```
+
+The configuration check must pass. Chat must produce a response. These commands
+do not start Slack, a tunnel, or the dashboard. Run `pnpm dev` only when you
+need the web app. The app listens on `127.0.0.1:3300`; the container disables
+automatic tunnels and browser opening. Do not forward private dashboard or
+diagnostic ports to a public address.
+
+The example app installs BullMQ and Redis as development dependencies. Other
+apps that select BullMQ must install both optional peers. Node bundles load
+these packages at runtime; keep their `node_modules` available.
+
+### Run tests
+
+Run the standard suite inside the container:
+
+```bash
+pnpm test
+```
+
+Core tests ignore local completion endpoint and model overrides. They use
+in-memory state and attachment storage, with Vercel queue and sandbox fixtures.
+Service tests still use the container's Postgres, Redis and `JUNIOR_S3_ENDPOINT`.
+The Postgres harness creates separate test databases; it does not reset the
+application database. CLI chat and live evals keep your local configuration.
+
+On a shared host, reduce test concurrency if the default run reaches
+test timeouts. Keep the existing time limits:
+
+```bash
+VITEST_MAX_WORKERS=2 pnpm test
+```
+
+The real Docker sandbox test is opt-in and needs network access:
+
+```bash
+JUNIOR_DOCKER_SANDBOX_TEST=1 pnpm --filter @sentry/junior exec vitest run tests/integration/docker-sandbox-provider.test.ts
+```
+
+This test calls the Docker provider directly. Normal tests do not change the
+application's Docker sandbox or BullMQ queue defaults.
+
+### Stop services
+
+To stop this project's services without removing its data, run on the host:
+
+```bash
+docker compose -p "$COMPOSE_PROJECT_NAME" -f compose.yaml \
+  -f .devcontainer/backing.compose.yaml -f .devcontainer/compose.yaml stop
+```
+
+Dependencies remain in the checkout when the container is removed. Do not run
+`down -v` unless you intend to delete this project's database, storage and
+pnpm cache volumes.
+
+## Native prerequisites
+
+- Node.js 24 and pnpm 11.8.0
+- Docker for the backing services
+- Gateway credentials, or a configured custom completion endpoint
+- Vercel CLI and Slack credentials only for workflows that need them
+
+## Native setup
+
+```bash
+pnpm install --frozen-lockfile
 ```
 
 ```bash
@@ -33,7 +178,7 @@ pnpm dlx vercel@latest env pull .env --environment=development
 
 If your team account requires an explicit Vercel scope, add `--scope <team-slug>` to the `link` and `env pull` commands.
 
-## Run
+## Run the native web app
 
 ```bash
 pnpm dev
@@ -69,7 +214,7 @@ By default, Junior runs agent sandboxes in Vercel Sandbox. To run them in a loca
 JUNIOR_SANDBOX_PROVIDER=docker
 ```
 
-The Docker provider needs a Docker daemon on a unix socket. It uses `/var/run/docker.sock`, or the unix socket in `DOCKER_HOST`. On macOS, the daemon runs in a VM, so each sandbox sends its web traffic through an egress relay container. Each sandbox is a privileged container, so do not run untrusted workloads with it.
+The Docker provider needs Docker Engine 25 or later (API 1.44) on a unix socket. It uses `/var/run/docker.sock`, or the unix socket in `DOCKER_HOST`. On macOS, the daemon runs in a VM, so each sandbox sends its web traffic through an egress relay container. Each sandbox is a privileged container, so do not run untrusted workloads with it.
 
 The first sandbox builds the `junior-sandbox-runtime` image. This takes a few minutes. Later sandboxes start in seconds. `pnpm dev` and `pnpm cli -- chat ...` both use the provider. Each process runs its own egress proxy, and the process that last acquired a sandbox carries its web traffic.
 

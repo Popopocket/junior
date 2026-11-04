@@ -1,5 +1,5 @@
 /**
- * AI Gateway credential resolution for every Junior model path.
+ * AI Gateway credentials for specialized operations and Gateway completions.
  *
  * Prefer Vercel project OIDC so gateway usage attributes to the deploying
  * project. Fall back to AI_GATEWAY_API_KEY for local/CI and non-Vercel hosts.

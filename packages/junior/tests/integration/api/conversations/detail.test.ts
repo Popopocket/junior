@@ -119,6 +119,92 @@ describe("conversation detail API", () => {
     });
   });
 
+  it("keeps custom and Gateway costs separate for the same wire model ID", async () => {
+    const conversationId = "local:test:hybrid-model-usage";
+    await getConversationStore().recordActivity({
+      conversationId,
+      destination: { platform: "local", conversationId },
+      nowMs: 1,
+      source: "internal",
+      visibility: "public",
+    });
+    await getConversationEventStore().append(
+      conversationId,
+      [
+        { provider: "vercel-ai-gateway", input: 20, output: 4, cost: 0.02 },
+        { provider: "openai-compatible", input: 50, output: 8, cost: 0.03 },
+      ].map((call, index) => ({
+        createdAtMs: 2 + index,
+        data: {
+          type: "assistant_message" as const,
+          api: "openai-completions",
+          provider: call.provider,
+          model: "openai/shared-model",
+          content: [{ type: "text", text: "Completed" }],
+          stopReason: "stop",
+          timestamp: 2 + index,
+          usage: {
+            input: call.input,
+            output: call.output,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: call.input + call.output,
+            cost: {
+              input: call.cost,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              total: call.cost,
+            },
+          },
+        },
+      })),
+    );
+
+    const app = createJuniorApi();
+    const response = await app.request(
+      `http://localhost/api/conversations/${conversationId}`,
+    );
+    expect(response.status).toBe(200);
+    const detail = conversationDetailReportSchema.parse(await response.json());
+    expect(detail.modelUsage).toEqual([
+      {
+        modelId: "openai-compatible/openai/shared-model",
+        usage: {
+          inputTokens: 50,
+          outputTokens: 8,
+          cachedInputTokens: 0,
+          cacheCreationTokens: 0,
+          totalTokens: 58,
+          cost: {
+            input: 0.03,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            total: 0.03,
+          },
+        },
+      },
+      {
+        modelId: "openai/shared-model",
+        usage: {
+          inputTokens: 20,
+          outputTokens: 4,
+          cachedInputTokens: 0,
+          cacheCreationTokens: 0,
+          totalTokens: 24,
+          cost: {
+            input: 0.02,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            total: 0.02,
+          },
+        },
+      },
+    ]);
+  });
+
   it("titles an untitled conversation from its first human message", async () => {
     const conversationId = "local:test:untitled-detail";
     await getConversationStore().recordActivity({

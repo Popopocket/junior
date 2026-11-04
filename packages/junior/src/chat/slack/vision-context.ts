@@ -1,7 +1,7 @@
 import { getSlackFileId } from "./attachments";
 import type { Attachment } from "chat";
 import { botConfig } from "@/chat/config";
-import { resolveGatewayModel, type completeText } from "@/chat/pi/client";
+import { resolveCompletionModel, type completeText } from "@/chat/pi/client";
 import type { ThreadConversationState } from "@/chat/state/conversation";
 import { getSqlExecutor } from "@/chat/db";
 import {
@@ -125,7 +125,7 @@ export function isVisionEnabled(): boolean {
  */
 function profileModelsAcceptImages(): boolean {
   return Object.values(botConfig.profiles).every((profile) =>
-    resolveGatewayModel(profile.modelId).input.includes("image"),
+    resolveCompletionModel(profile.modelId).input.includes("image"),
   );
 }
 

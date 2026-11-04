@@ -1,0 +1,15 @@
+{
+  "name": "Junior (Linux Docker)",
+  "dockerComposeFile": [
+    "../compose.yaml",
+    "backing.compose.yaml",
+    "compose.yaml"
+  ],
+  "service": "devcontainer",
+  "runServices": ["postgres", "redis", "s3", "devcontainer"],
+  "workspaceFolder": "/workspaces/junior",
+  "remoteUser": "node",
+  "updateRemoteUserUID": true,
+  "overrideCommand": false,
+  "shutdownAction": "stopCompose"
+}

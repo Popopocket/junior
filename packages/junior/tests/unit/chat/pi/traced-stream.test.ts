@@ -27,7 +27,11 @@ vi.mock("@/chat/sentry", () => ({
 }));
 
 function fakeModel(id: string): Model<"anthropic-messages"> {
-  return { id } as Model<"anthropic-messages">;
+  return {
+    id,
+    provider: "vercel-ai-gateway",
+    baseUrl: "https://ai-gateway.vercel.sh",
+  } as Model<"anthropic-messages">;
 }
 
 function spanStartOptions(value: unknown): {
@@ -102,6 +106,36 @@ describe("createTracedStreamFn", () => {
     const opts = spanStartOptions(startInactiveSpan.mock.calls[0]?.[0]);
     expect(opts.op).toBe("gen_ai.chat");
     expect(opts.name).toBe("chat openai/gpt-5.4");
+  });
+
+  it("attributes a custom stream to its host without exposing its URL path", async () => {
+    // Each test reloads the stream boundary for module isolation.
+    const { createTracedStreamFn } = await import("@/chat/pi/traced-stream");
+    const stream = createAssistantMessageEventStream();
+    const traced = createTracedStreamFn(() => stream);
+    await traced(
+      {
+        ...fakeModel("shared-model"),
+        api: "openai-completions",
+        provider: "openai-compatible",
+        baseUrl: "http://127.0.0.1:8317/private-model-route/v1",
+        maxTokens: 65_536,
+      },
+      { messages: [{ role: "user", content: "hello", timestamp: 0 }] },
+      undefined,
+    );
+    const options = spanStartOptions(startInactiveSpan.mock.calls[0]?.[0]);
+    expect(options.attributes).toMatchObject({
+      "gen_ai.provider.name": "openai-compatible",
+      "gen_ai.request.model": "shared-model",
+      "server.address": "127.0.0.1",
+      "server.port": 8317,
+    });
+    expect(JSON.stringify(options.attributes)).not.toContain(
+      "private-model-route",
+    );
+    stream.end(fakeMessage());
+    await flushEvents();
   });
 
   it("omits opt-in semantic content when privacy is unknown", async () => {

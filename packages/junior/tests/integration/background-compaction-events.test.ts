@@ -10,7 +10,7 @@ import { buildAgentModelRequest } from "@/chat/agent/context-summary";
 import { botConfig } from "@/chat/config";
 import { getConversationEventStore } from "@/chat/db";
 import { defaultModelId } from "@/chat/model-profile";
-import { getGatewayApiKey, resolveGatewayModel } from "@/chat/pi/client";
+import { getCompletionApiKey, resolveCompletionModel } from "@/chat/pi/client";
 import {
   processBackgroundCompaction,
   requestBackgroundCompaction,
@@ -202,13 +202,13 @@ function replies(texts: string[]): { calls: Context[]; streamFn: StreamFn } {
 /** The live agent at the end of a Turn whose last request had this input. */
 function liveAgent(inputSize: number): Agent {
   return new Agent({
-    getApiKey: getGatewayApiKey,
+    getApiKey: getCompletionApiKey,
     sessionId: CONVERSATION_ID,
     streamFn: () => {
       throw new Error("The Turn is complete");
     },
     initialState: {
-      model: resolveGatewayModel(MODEL_ID),
+      model: resolveCompletionModel(MODEL_ID),
       systemPrompt: "You are Junior.",
       thinkingLevel: "low",
       tools: [

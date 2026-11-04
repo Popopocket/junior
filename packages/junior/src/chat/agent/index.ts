@@ -63,10 +63,10 @@ import {
   credentialUserSubjectId,
 } from "@/chat/credentials/context";
 import {
-  GEN_AI_PROVIDER_NAME,
   completeObject,
-  getGatewayApiKey,
-  resolveGatewayModel,
+  completionTraceAttributes,
+  getCompletionApiKey,
+  resolveCompletionModel,
 } from "@/chat/pi/client";
 import type { PiMessage } from "@/chat/pi/messages";
 import { renderAgentsInstructions } from "@/chat/repository-instructions";
@@ -905,7 +905,7 @@ async function executeAgentRunInPrivacyContext(
       spanContext,
       state,
       supportsImageInput: () =>
-        resolveGatewayModel(activeModelId).input.includes("image"),
+        resolveCompletionModel(activeModelId).input.includes("image"),
       surface,
       toolCalls,
       userInput,
@@ -1195,9 +1195,9 @@ async function executeAgentRunInPrivacyContext(
     // rejecting. Preserve Junior's yield so runAgentStep can restore it after
     // the Pi run settles without leaking Pi mechanics into the resume API.
     agent = new Agent({
-      // Resolve on every provider call so runtime OIDC tokens stay fresh.
-      getApiKey: getGatewayApiKey,
-      // One AI Gateway session per Conversation, not a prompt fingerprint.
+      // Gateway OIDC rotates per call; custom credentials stay on their endpoint.
+      getApiKey: getCompletionApiKey,
+      // Keep one provider session per Conversation.
       sessionId: conversationId,
       streamFn: createTracedStreamFn({
         conversationPrivacy,
@@ -1349,7 +1349,7 @@ async function executeAgentRunInPrivacyContext(
       },
       initialState: {
         systemPrompt: baseInstructions,
-        model: resolveGatewayModel(activeModelId),
+        model: resolveCompletionModel(activeModelId),
         thinkingLevel: toPiReasoningLevel(turnRoute.reasoningLevel),
         tools: wiring.agentTools,
       },
@@ -1513,7 +1513,9 @@ async function executeAgentRunInPrivacyContext(
             } catch (error) {
               if (runResume.timedOut) {
                 logWarn("agent.turn.timed_out", {
-                  "gen_ai.provider.name": GEN_AI_PROVIDER_NAME,
+                  ...completionTraceAttributes(
+                    resolveCompletionModel(activeModelId),
+                  ),
                   "gen_ai.operation.name": "invoke_agent",
                   "gen_ai.request.model": activeModelId,
                   ...(turnRoute

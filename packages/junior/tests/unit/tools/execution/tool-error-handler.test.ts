@@ -14,11 +14,6 @@ vi.mock("@/chat/logging", () => ({
   setSpanAttributes: (...args: unknown[]) => setSpanAttributesMock(...args),
 }));
 
-vi.mock("@/chat/pi/client", () => ({
-  GEN_AI_PROVIDER_NAME: "test-provider",
-  resolveGatewayModel: (modelId: string) => modelId,
-}));
-
 import { handleToolExecutionError } from "@/chat/tools/execution/tool-error-handler";
 import { McpToolError } from "@/chat/mcp/errors";
 import {

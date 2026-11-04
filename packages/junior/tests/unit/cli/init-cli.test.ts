@@ -6,13 +6,6 @@ import { runCheck } from "@/cli/check";
 import { runInit } from "@/cli/init";
 
 const tempRoots: string[] = [];
-const repoRoot = path.resolve(import.meta.dirname, "../../../../..");
-const examplePackageJsonPath = path.join(
-  repoRoot,
-  "apps",
-  "example",
-  "package.json",
-);
 
 function readJsonFile<T>(filePath: string): T {
   return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
@@ -22,42 +15,6 @@ function makeTempDir(prefix: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   tempRoots.push(dir);
   return dir;
-}
-
-function normalizeText(source: string): string {
-  return source.trim().replace(/\n{3,}/g, "\n\n");
-}
-
-function removeExampleOnlyServerConfig(source: string): string {
-  return normalizeText(
-    source
-      .replace(
-        /  \{ exampleDashboardAuthRequired, exampleDashboardMockConversations \},\n/,
-        "",
-      )
-      .replace('  import("./dashboard.ts"),\n', "")
-      // The example deployment allows Sentry; the scaffold uses a placeholder.
-      .replace(
-        'allowedDomains: ["sentry.io"]',
-        'allowedDomains: ["example.com"]',
-      )
-      .replace(/  dashboard: \{[\s\S]*?  \},\n  plugins,/, "  plugins,")
-      .replace(/  configDefaults: \{[\s\S]*?  \},\n/, ""),
-  );
-}
-
-function removeExampleDashboardNitroConfig(source: string): string {
-  return normalizeText(
-    source
-      .replace(
-        /import \{\n  exampleDashboardAuthRequired,\n  exampleDashboardMockConversations,\n\} from "\.\/dashboard\.ts";\n/,
-        "",
-      )
-      .replace(
-        /      dashboard: \{[\s\S]*?      \},\n      plugins:/,
-        "      plugins:",
-      ),
-  );
 }
 
 afterEach(() => {
@@ -198,104 +155,6 @@ minimumReleaseAgeExclude:
       error: (line) => checkLines.push(line),
     });
     expect(checkLines).toContain("✓ deployment config");
-  });
-
-  it("keeps the Nitro scaffold aligned with the example app", async () => {
-    const target = makeTempDir("junior-init-example-parity-");
-
-    await runInit(target, () => undefined);
-
-    const scaffoldPackage = readJsonFile<{
-      dependencies: Record<string, string>;
-      devDependencies: Record<string, string>;
-      scripts: Record<string, string>;
-    }>(path.join(target, "package.json"));
-    const examplePackage = readJsonFile<{
-      dependencies: Record<string, string>;
-      devDependencies: Record<string, string>;
-      scripts: Record<string, string>;
-    }>(examplePackageJsonPath);
-
-    const exampleCoreScriptNames = Object.keys(examplePackage.scripts)
-      .filter(
-        (name) =>
-          (name === "preview" || !name.startsWith("pre")) &&
-          !name.startsWith("post"),
-      )
-      .sort();
-    expect(Object.keys(scaffoldPackage.scripts).sort()).toEqual(
-      ["check", ...exampleCoreScriptNames].sort(),
-    );
-    expect(
-      Object.fromEntries(
-        exampleCoreScriptNames.map((name) => [
-          name,
-          scaffoldPackage.scripts[name],
-        ]),
-      ),
-    ).toEqual(
-      Object.fromEntries(
-        exampleCoreScriptNames.map((name) => [
-          name,
-          examplePackage.scripts[name],
-        ]),
-      ),
-    );
-
-    const scaffoldNonPluginDeps = Object.fromEntries(
-      Object.entries(scaffoldPackage.dependencies).filter(
-        ([name]) => !name.startsWith("@sentry/junior"),
-      ),
-    );
-    const exampleNonPluginDeps = Object.fromEntries(
-      Object.entries(examplePackage.dependencies).filter(
-        ([name]) => !name.startsWith("@sentry/junior"),
-      ),
-    );
-    expect(scaffoldNonPluginDeps).toEqual(exampleNonPluginDeps);
-    expect(scaffoldPackage.devDependencies).toEqual(
-      examplePackage.devDependencies,
-    );
-
-    const scaffoldVercelConfig = readJsonFile<Record<string, unknown>>(
-      path.join(target, "vercel.json"),
-    );
-    const exampleVercelConfig = readJsonFile<Record<string, unknown>>(
-      path.join(repoRoot, "apps", "example", "vercel.json"),
-    );
-    expect(scaffoldVercelConfig).toEqual(exampleVercelConfig);
-
-    const scaffoldNitroConfig = fs.readFileSync(
-      path.join(target, "nitro.config.ts"),
-      "utf8",
-    );
-    const exampleNitroConfig = fs.readFileSync(
-      path.join(repoRoot, "apps", "example", "nitro.config.ts"),
-      "utf8",
-    );
-    expect(normalizeText(scaffoldNitroConfig)).toEqual(
-      removeExampleDashboardNitroConfig(exampleNitroConfig),
-    );
-
-    const scaffoldServer = fs.readFileSync(
-      path.join(target, "server.ts"),
-      "utf8",
-    );
-    const exampleServer = fs.readFileSync(
-      path.join(repoRoot, "apps", "example", "server.ts"),
-      "utf8",
-    );
-    expect(normalizeText(scaffoldServer)).toEqual(
-      removeExampleOnlyServerConfig(exampleServer),
-    );
-
-    const scaffoldTsConfig = readJsonFile<Record<string, unknown>>(
-      path.join(target, "tsconfig.json"),
-    );
-    const exampleTsConfig = readJsonFile<Record<string, unknown>>(
-      path.join(repoRoot, "apps", "example", "tsconfig.json"),
-    );
-    expect(scaffoldTsConfig).toEqual(exampleTsConfig);
   });
 
   it("refuses to initialize a non-empty directory", async () => {

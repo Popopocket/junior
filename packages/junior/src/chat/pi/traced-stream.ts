@@ -19,11 +19,8 @@ import {
   normalizeGenAiFinishReason,
   serializeGenAiAttribute,
 } from "@/chat/logging";
-import {
-  GEN_AI_PROVIDER_NAME,
-  GEN_AI_SERVER_ADDRESS,
-  GEN_AI_SERVER_PORT,
-} from "@/chat/pi/client";
+import { completionTraceAttributes } from "@/chat/pi/client";
+import { completionStreamOptions } from "@/chat/pi/completion-options";
 import {
   type ConversationPrivacy,
   toCanonicalInputMessage,
@@ -58,13 +55,11 @@ function buildChatStartAttributes(
 ): Record<string, TraceAttributeValue> {
   const attributes: Record<string, TraceAttributeValue> = {
     "gen_ai.operation.name": "chat",
-    "gen_ai.provider.name": GEN_AI_PROVIDER_NAME,
+    ...completionTraceAttributes(model),
     "gen_ai.request.model": model.id,
     ...(promptName ? { "gen_ai.prompt.name": promptName } : undefined),
     "gen_ai.request.stream": true,
     "gen_ai.output.type": "text",
-    "server.address": GEN_AI_SERVER_ADDRESS,
-    "server.port": GEN_AI_SERVER_PORT,
     ...(options?.temperature !== undefined
       ? { "gen_ai.request.temperature": options.temperature }
       : undefined),
@@ -294,6 +289,7 @@ export function createTracedStreamFn(
   const promptName =
     typeof baseOrOptions === "function" ? undefined : baseOrOptions.promptName;
   return async (model, context, options) => {
+    const streamOptions = completionStreamOptions(model, context, options);
     const span = Sentry.startInactiveSpan({
       name: `chat ${model.id}`,
       op: "gen_ai.chat",
@@ -302,7 +298,7 @@ export function createTracedStreamFn(
         ...buildChatStartAttributes(
           model,
           context,
-          options,
+          streamOptions,
           mode,
           effectivePrivacy,
           promptName,
@@ -314,7 +310,7 @@ export function createTracedStreamFn(
       const requestStartedAtMs = Date.now();
       const stream = await Sentry.withActiveSpan(span, () =>
         Promise.resolve(
-          base(model, context, traceResponseHeaders(span, options)),
+          base(model, context, traceResponseHeaders(span, streamOptions)),
         ),
       );
       const responseTiming = createResponseTiming(requestStartedAtMs);

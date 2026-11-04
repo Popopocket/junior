@@ -4,7 +4,7 @@ import {
 } from "@/chat/attachments/config";
 import { toOptionalTrimmed } from "@/chat/optional-string";
 import { readQueueConfig, type QueueConfig } from "@/chat/queue/config";
-import { resolveGatewayModel } from "@/chat/pi/client";
+import { resolveCompletionModel, resolveGatewayModel } from "@/chat/pi/client";
 import { normalizeSlackEmojiName } from "@/chat/slack/emoji";
 import { logWarn } from "@/chat/logging";
 import {
@@ -269,6 +269,15 @@ function validateGatewayModelId(raw: string | undefined): string | undefined {
   return trimmed;
 }
 
+function validateCompletionModelId(
+  raw: string | undefined,
+): string | undefined {
+  const trimmed = toOptionalTrimmed(raw);
+  if (trimmed === undefined) return undefined;
+  resolveCompletionModel(trimmed);
+  return trimmed;
+}
+
 function validateEmbeddingModelId(raw: string | undefined): string | undefined {
   return toOptionalTrimmed(raw);
 }
@@ -330,7 +339,7 @@ function parseProfileConfig(
   profile: string,
 ): ModelProfileConfig {
   if (typeof rawProfile === "string") {
-    const modelId = validateGatewayModelId(rawProfile);
+    const modelId = validateCompletionModelId(rawProfile);
     if (!modelId) {
       throw new Error(`${configName}.${profile} must not be empty`);
     }
@@ -353,7 +362,7 @@ function parseProfileConfig(
       `${configName}.${profile}.modelId must be a model id string`,
     );
   }
-  const modelId = validateGatewayModelId(rawModelId);
+  const modelId = validateCompletionModelId(rawModelId);
   if (!modelId) {
     throw new Error(`${configName}.${profile}.modelId must not be empty`);
   }
@@ -473,15 +482,16 @@ function readBotConfig(
   functionMaxDurationSeconds: number,
 ): BotConfig {
   const maxTurnTimeoutMs = resolveMaxTurnTimeoutMs(functionMaxDurationSeconds);
-  const modelId = validateGatewayModelId(env.AI_MODEL) ?? DEFAULT_MODEL_ID;
+  const modelId = validateCompletionModelId(env.AI_MODEL) ?? DEFAULT_MODEL_ID;
   const reasoningLevel = toOptionalTrimmed(env.AI_REASONING_LEVEL);
   const fastModelId =
-    validateGatewayModelId(env.AI_FAST_MODEL ?? env.AI_MODEL) ??
+    validateCompletionModelId(env.AI_FAST_MODEL ?? env.AI_MODEL) ??
     DEFAULT_FAST_MODEL_ID;
   const guardianModelId =
-    validateGatewayModelId(env.AI_GUARDIAN_MODEL) ?? DEFAULT_GUARDIAN_MODEL_ID;
+    validateCompletionModelId(env.AI_GUARDIAN_MODEL) ??
+    DEFAULT_GUARDIAN_MODEL_ID;
   const handoffModelId =
-    validateGatewayModelId(env.AI_HANDOFF_MODEL) ?? DEFAULT_HANDOFF_MODEL_ID;
+    validateCompletionModelId(env.AI_HANDOFF_MODEL) ?? DEFAULT_HANDOFF_MODEL_ID;
 
   return {
     userName: toOptionalTrimmed(env.JUNIOR_BOT_NAME) ?? "junior",
@@ -512,7 +522,7 @@ function readBotConfig(
     visionModelId:
       env.AI_VISION_MODEL === undefined
         ? DEFAULT_VISION_MODEL_ID
-        : validateGatewayModelId(env.AI_VISION_MODEL),
+        : validateCompletionModelId(env.AI_VISION_MODEL),
     maxAgentDepth: 0,
     maxSlicesPerTurn: MAX_SLICES_PER_TURN,
     maxToolCallsPerTurn: MAX_TOOL_CALLS_PER_TURN,
@@ -856,14 +866,14 @@ export function setBotModelConfig(config: BotModelConfig): void {
     botConfig.fastModelId = requireModelId(
       "fastModelId",
       config.fastModelId,
-      validateGatewayModelId,
+      validateCompletionModelId,
     );
   }
   if (config.guardianModelId !== undefined) {
     botConfig.guardianModelId = requireModelId(
       "guardianModelId",
       config.guardianModelId,
-      validateGatewayModelId,
+      validateCompletionModelId,
     );
   }
   if (config.rerankingModelId !== undefined) {
@@ -884,7 +894,7 @@ export function setBotModelConfig(config: BotModelConfig): void {
     botConfig.visionModelId = requireModelId(
       "visionModelId",
       config.visionModelId,
-      validateGatewayModelId,
+      validateCompletionModelId,
     );
   }
   if (config.webSearchModelId !== undefined) {

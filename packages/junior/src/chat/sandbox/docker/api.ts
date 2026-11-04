@@ -4,7 +4,7 @@ import type { Readable } from "node:stream";
 // Module overview: a small Docker Engine API client over the local unix
 // socket. It uses `node:http`, so the Docker provider needs no SDK.
 
-const API_VERSION = "v1.43";
+const API_VERSION = "v1.44";
 const DEFAULT_SOCKET_PATH = "/var/run/docker.sock";
 
 /** Error response from the Docker Engine API. */

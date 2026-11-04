@@ -4,11 +4,11 @@ import type { StreamFn } from "@earendil-works/pi-agent-core";
 import {
   createAssistantMessageEventStream,
   type AssistantMessage,
-  type Model,
 } from "@earendil-works/pi-ai";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as Sentry from "@/chat/sentry";
 import { subscribeGatewayRequestTiming } from "@/chat/pi/gateway-request-timing";
+import { resolveGatewayModel } from "@/chat/pi/client";
 import { createTracedStreamFn } from "@/chat/pi/traced-stream";
 
 const VERCEL_ID = "iad1::iad1::abcde-1-test";
@@ -109,7 +109,7 @@ describe("gateway request timing", () => {
   async function runChat(attempts: number) {
     const traced = createTracedStreamFn(gatewayStream(attempts));
     const stream = await traced(
-      { id: "anthropic/claude-test" } as Model<"anthropic-messages">,
+      { ...resolveGatewayModel("anthropic/claude-haiku-4.5"), baseUrl: url },
       { messages: [{ role: "user", content: "hi", timestamp: 0 }] },
       undefined,
     );

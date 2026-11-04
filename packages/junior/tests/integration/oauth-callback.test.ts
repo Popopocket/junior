@@ -39,6 +39,7 @@ describe("oauth callback integration", () => {
       JUNIOR_STATE_ADAPTER: "memory",
       JUNIOR_BASE_URL: "https://junior.example.com",
       JUNIOR_SECRET: "test-local-oauth-secret",
+      PORT: "3000",
     };
     pluginApp = await createPluginAppFixture([EVAL_OAUTH_PLUGIN_ROOT]);
     vi.resetModules();
