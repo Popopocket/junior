@@ -161,6 +161,8 @@ export async function ensureEgressRelay(
       HostConfig: {
         NetworkMode: container.name,
         ExtraHosts: [`${RELAY_PROXY_HOST}:${proxyHost}`],
+        // A dual-network relay must not route packets into Junior's network.
+        Sysctls: { "net.ipv4.ip_forward": "0" },
       },
     },
   });
