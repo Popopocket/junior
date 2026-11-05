@@ -224,6 +224,7 @@ Optional settings:
 
 - `JUNIOR_DOCKER_SANDBOX_DIR` sets the directory of the local egress CA. The default is `~/.cache/junior/docker-sandbox`.
 - `JUNIOR_DOCKER_SANDBOX_EXTRA_CA_CERTS` names a PEM file that each sandbox also trusts. Set it when your machine is behind a TLS proxy.
+- `JUNIOR_DOCKER_RELAY_NETWORK` names the Docker network of a containerized Junior process. Set it when Junior runs in a container and uses the host Docker socket. Junior connects each sandbox's authenticated egress relay to this network.
 
 To remove all Docker sandboxes and snapshots:
 

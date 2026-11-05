@@ -259,6 +259,33 @@ describe.skipIf(!process.env.JUNIOR_DOCKER_SANDBOX_TEST)(
             await unauthenticatedProxyReply(await proxyPort(session)),
           ).toBe("");
 
+          // Other containers on Junior's runtime network cannot use a
+          // sandbox relay to impersonate that sandbox.
+          const relayNetwork = process.env.JUNIOR_DOCKER_RELAY_NETWORK;
+          if (relayNetwork) {
+            const relay = await dockerJson<{
+              NetworkSettings: {
+                Networks: Record<string, { IPAddress: string }>;
+              };
+            }>({ path: `/containers/${session.sandboxId}-egress/json` });
+            const socket = net.connect({
+              host: relay.NetworkSettings.Networks[relayNetwork]!.IPAddress,
+              port: 15080,
+            });
+            let reply = "";
+            socket.on("data", (chunk: Buffer) => (reply += chunk.toString()));
+            socket.on("error", () => undefined);
+            const closed = new Promise((resolve) =>
+              socket.on("close", resolve),
+            );
+            socket.write(
+              `GET /anything HTTP/1.1\r\nHost: ${CREDENTIAL_DOMAIN}\r\nConnection: close\r\n\r\n`,
+            );
+            await closed;
+            // eslint-disable-next-line vitest/no-conditional-expect -- This interface exists only for a containerized runtime.
+            expect(reply).toBe("");
+          }
+
           // Pass-through never reaches an address that is not public. The
           // proxy closes the connection, so curl gets no status code. A
           // loopback service on this host counts requests that get through.

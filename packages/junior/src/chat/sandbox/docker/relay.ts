@@ -1,3 +1,4 @@
+import os from "node:os";
 import {
   DockerApiError,
   dockerJson,
@@ -17,15 +18,16 @@ import { DOCKER_SANDBOX_LABEL } from "@/chat/sandbox/docker/settings";
 import { packTar } from "@/chat/sandbox/docker/tar";
 import { SANDBOX_RUNTIME } from "@/chat/sandbox/snapshot/runtime";
 
-// Module overview: the egress relay for Docker daemons in a VM.
+// Module overview: authenticated egress relay for remote Docker networks.
 //
 // On Docker Desktop and OrbStack, the daemon runs in a Linux VM. A sandbox
 // cannot reach a proxy on the host through its network gateway. Through
 // `host.docker.internal`, the host sees every connection come from one VM
 // address. So the proxy cannot tell sandboxes apart by source address.
 //
-// A relay container joins the sandbox's own network. Only that sandbox can
-// reach it. The relay sends each connection to the proxy over TLS with a
+// A relay joins the sandbox network and, for a containerized Junior process,
+// its runtime network. It accepts connections only from the sandbox address.
+// The relay sends each connection to the proxy over TLS with a
 // client certificate for the sandbox's container id. The egress CA signs that
 // certificate, and the key stays in the relay container. The proxy accepts
 // only connections with a valid client certificate, so a sandbox cannot use
@@ -37,6 +39,7 @@ const RELAY_PORT = 15080;
 const RELAY_DIR = "/run/junior-relay";
 /** Label with the proxy port that the relay sends to. */
 const TARGET_LABEL = "dev.junior.sandbox.relay-target";
+const TARGET_HOST_LABEL = "dev.junior.sandbox.relay-host";
 
 interface RelayInspect {
   Id: string;
@@ -48,11 +51,14 @@ interface RelayInspect {
 /**
  * Return whether sandboxes reach the proxy through a relay.
  *
- * On Linux, the Docker daemon runs on this host, and the sandbox network
- * gateway is a host address. Other systems run the daemon in a VM.
+ * Linux processes on the Docker host can use the sandbox gateway directly.
+ * A containerized Junior process needs a relay on its own Docker network.
  */
 export function usesEgressRelay(): boolean {
-  return process.platform !== "linux";
+  return (
+    process.platform !== "linux" ||
+    Boolean(process.env.JUNIOR_DOCKER_RELAY_NETWORK?.trim())
+  );
 }
 
 async function inspectRelay(name: string): Promise<RelayInspect | undefined> {
@@ -105,10 +111,25 @@ export async function ensureEgressRelay(
   proxyPort: number,
 ): Promise<string> {
   const name = egressRelayName(container.name);
+  const network = process.env.JUNIOR_DOCKER_RELAY_NETWORK?.trim();
+  let proxyHost = "host-gateway";
+  if (network) {
+    const self = await dockerJson<RelayInspect>({
+      path: `/containers/${encodeURIComponent(os.hostname())}/json`,
+    });
+    const address = self.NetworkSettings.Networks[network]?.IPAddress;
+    if (!address) {
+      throw new Error(
+        `Junior process is not connected to Docker network ${network}`,
+      );
+    }
+    proxyHost = address;
+  }
   const existing = await inspectRelay(name);
   if (
     existing?.State.Running &&
-    existing.Config.Labels[TARGET_LABEL] === String(proxyPort)
+    existing.Config.Labels[TARGET_LABEL] === String(proxyPort) &&
+    existing.Config.Labels[TARGET_HOST_LABEL] === proxyHost
   ) {
     return relayAddress(container, existing);
   }
@@ -127,7 +148,7 @@ export async function ensureEgressRelay(
       Image: await ensureRuntimeImage(SANDBOX_RUNTIME),
       Cmd: [
         "socat",
-        `TCP-LISTEN:${RELAY_PORT},fork,reuseaddr`,
+        `TCP-LISTEN:${RELAY_PORT},fork,reuseaddr,range=${container.ip}/32`,
         `OPENSSL:${RELAY_PROXY_HOST}:${proxyPort},cert=${RELAY_DIR}/client.pem,key=${RELAY_DIR}/client-key.pem,cafile=${RELAY_DIR}/ca.pem`,
       ],
       User: "root",
@@ -135,13 +156,21 @@ export async function ensureEgressRelay(
       Labels: {
         [DOCKER_SANDBOX_LABEL]: `relay:${container.name}`,
         [TARGET_LABEL]: String(proxyPort),
+        [TARGET_HOST_LABEL]: proxyHost,
       },
       HostConfig: {
         NetworkMode: container.name,
-        ExtraHosts: [`${RELAY_PROXY_HOST}:host-gateway`],
+        ExtraHosts: [`${RELAY_PROXY_HOST}:${proxyHost}`],
       },
     },
   });
+  if (network) {
+    await dockerRequest({
+      method: "POST",
+      path: `/networks/${encodeURIComponent(network)}/connect`,
+      body: { Container: created.Id },
+    });
+  }
   await dockerRequest({
     method: "PUT",
     path: `/containers/${created.Id}/archive`,
