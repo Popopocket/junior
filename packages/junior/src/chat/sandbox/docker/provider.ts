@@ -168,12 +168,14 @@ const DOCKER_SNAPSHOT_PACKAGES = new Set([
 ]);
 
 /**
- * Keep only the small Docker base from the declared runtime dependencies.
+ * Use the complete declared runtime only when explicitly requested.
  *
- * Postinstall commands are skipped, because they often download large tools.
+ * Otherwise keep the small Docker base and skip large postinstall downloads.
  * A base package that no plugin declares is not installed.
  */
 function selectSnapshotRuntime(runtime: SnapshotRuntime): SnapshotRuntime {
+  if (process.env.JUNIOR_DOCKER_SANDBOX_FULL_RUNTIME === "1") return runtime;
+
   return {
     dependencies: runtime.dependencies.filter(
       (dependency) =>

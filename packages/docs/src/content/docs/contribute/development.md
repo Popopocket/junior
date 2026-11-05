@@ -218,13 +218,18 @@ The Docker provider needs Docker Engine 25 or later (API 1.44) on a unix socket.
 
 The first sandbox builds the `junior-sandbox-runtime` image. This takes a few minutes. Later sandboxes start in seconds. `pnpm dev` and `pnpm cli -- chat ...` both use the provider. Each process runs its own egress proxy, and the process that last acquired a sandbox carries its web traffic.
 
-Docker sandboxes have a small toolset: `gh`, `jq`, and `ripgrep`. They do not include other plugin CLIs, browsers, or Docker. The agent installs other tools with `sudo` when it needs them. Vercel sandboxes still include every tool that the plugins declare.
+By default, Docker sandboxes have a small toolset: `gh`, `jq`, and `ripgrep`. They do not include other plugin CLIs, browsers, or Docker. The agent installs other tools with `sudo` when it needs them. Vercel sandboxes still include every tool that the plugins declare.
 
 Optional settings:
 
+- `JUNIOR_DOCKER_SANDBOX_FULL_RUNTIME=1` installs all declared plugin dependencies and runs all plugin and global postinstall commands, including the Docker and Compose setup. This uses the normal cached snapshot recipe and makes the first build larger and slower. Set it in both the app and queue worker environments.
 - `JUNIOR_DOCKER_SANDBOX_DIR` sets the directory of the local egress CA. The default is `~/.cache/junior/docker-sandbox`.
 - `JUNIOR_DOCKER_SANDBOX_EXTRA_CA_CERTS` names a PEM file that each sandbox also trusts. Set it when your machine is behind a TLS proxy.
 - `JUNIOR_DOCKER_RELAY_NETWORK` names the Docker network of a containerized Junior process. Set it when Junior runs in a container and uses the host Docker socket. Junior connects each sandbox's authenticated egress relay to this network.
+
+Restart the app and worker after changing the full runtime setting. New sandboxes
+use a separate snapshot profile. Existing Slack threads keep their current
+sandbox, even when the profile changes. Start a new thread to use the new tools.
 
 To remove all Docker sandboxes and snapshots:
 
