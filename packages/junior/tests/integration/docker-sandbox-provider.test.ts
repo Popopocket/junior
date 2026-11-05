@@ -192,6 +192,12 @@ describe.skipIf(!process.env.JUNIOR_DOCKER_SANDBOX_TEST)(
             timeoutMs: SANDBOX_TIMEOUT_MS,
           });
           sessions.push(session);
+          const elevated = await session.runCommand({
+            cmd: "sh",
+            args: ["-c", "sudo -n id -u"],
+          });
+          expect(elevated.exitCode).toBe(0);
+          expect(elevated.stdout.trim()).toBe("0");
           await session.writeFiles([{ path: "notes/a.txt", content: "kept" }]);
           const resumed = await dockerSandboxProvider.getSession({
             name: session.sandboxId,

@@ -54,6 +54,8 @@ function buildScript(runtime: string): string {
     `dnf install -y --allowerasing ${[...packages, ...COMMON_PACKAGES].join(" ")}`,
     "dnf clean all",
     `useradd --create-home --uid 1000 ${SANDBOX_USER}`,
+    // PAM must read the shadow entry for passwordless sudo.
+    "chmod 0400 /etc/shadow",
     `echo '${SANDBOX_USER} ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/${SANDBOX_USER}`,
     `chmod 0440 /etc/sudoers.d/${SANDBOX_USER}`,
     `mkdir -p ${SANDBOX_WORKSPACE_ROOT}`,
