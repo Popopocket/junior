@@ -1,6 +1,7 @@
 import { generateKeyPairSync } from "node:crypto";
 import {
   EgressAuthRequired,
+  EgressPolicyDenied,
   type PluginSandbox,
   type PluginStoredTokens,
   type SandboxPrepareHookContext,
@@ -2746,13 +2747,38 @@ Conversation: \`local:test:old-conversation\`
       access: "write",
       reason: "github.installation-write",
     });
+  });
+
+  it("allows a pull request merge as the App bot for a pinned head SHA", async () => {
     await expect(
       grantForEgress({
         method: "PUT",
         url: "https://api.github.com/repos/getsentry/junior/pulls/780/merge",
+        bodyText: JSON.stringify({
+          sha: "0123456789abcdef0123456789abcdef01234567",
+          merge_method: "squash",
+        }),
       }),
-    ).rejects.toThrow("This GitHub write request is not supported.");
+    ).resolves.toMatchObject({
+      name: "installation-write",
+      access: "write",
+      reason: "github.installation-write",
+    });
   });
+
+  it.each([undefined, "{", "null", "[]", "{}", '{"sha":"main"}'])(
+    "denies a pull request merge without a valid head SHA: %s",
+    async (bodyText) => {
+      const request: Parameters<typeof grantForEgress>[0] = {
+        method: "PUT",
+        url: "https://api.github.com/repos/getsentry/junior/pulls/780/merge",
+      };
+      if (bodyText !== undefined) request.bodyText = bodyText;
+      await expect(grantForEgress(request)).rejects.toBeInstanceOf(
+        EgressPolicyDenied,
+      );
+    },
+  );
 
   it("denies GitHub pull request approvals while allowing non-approve reviews", async () => {
     await expect(

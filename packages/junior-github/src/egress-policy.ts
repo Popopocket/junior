@@ -3,7 +3,7 @@
  *
  * Owns which GitHub requests Junior may make and which credential grant
  * each request needs. Junior-owned issue, pull request, review, and push
- * writes never fall back to user OAuth. Merge, fork, branch deletion, REST ref
+ * writes never fall back to user OAuth. Fork, branch deletion, REST ref
  * writes, and administration stay unsupported; unknown REST writes and
  * GraphQL mutations are denied.
  */
@@ -329,6 +329,8 @@ type GitHubBodyWrite = {
 
 const PULL_REQUEST_COMMENT_REACTIONS_PATH =
   /^\/repos\/[^/]+\/[^/]+\/(issues|pulls)\/comments\/[^/]+\/reactions(?:\/[^/]+)?$/;
+const PULL_REQUEST_MERGE_PATH =
+  /^\/repos\/[^/]+\/[^/]+\/pulls\/[1-9]\d*\/merge$/;
 
 const GITHUB_BODY_WRITES = [
   {
@@ -399,6 +401,9 @@ function githubApiWriteGrantName(
       (write) => write.method === method && write.restPath.test(pathname),
     )
   ) {
+    return "installation-write";
+  }
+  if (method === "PUT" && PULL_REQUEST_MERGE_PATH.test(pathname)) {
     return "installation-write";
   }
   if (
@@ -540,6 +545,28 @@ function applyGitHubEgressPolicy(input: {
   operation?: string;
   upstreamUrl: URL;
 }): void {
+  if (
+    input.method === "PUT" &&
+    isGitHubApiUrl(input.upstreamUrl) &&
+    PULL_REQUEST_MERGE_PATH.test(input.upstreamUrl.pathname.toLowerCase())
+  ) {
+    let body: unknown;
+    try {
+      body = JSON.parse(input.bodyText ?? "");
+    } catch {
+      body = undefined;
+    }
+    // GitHub must reject the merge if the reviewed head changed.
+    enforceEgressPolicy({
+      allowed:
+        isRecord(body) &&
+        typeof body.sha === "string" &&
+        /^[a-f0-9]{40}$/i.test(body.sha),
+      denialMessage:
+        "GitHub pull request merge requires the full reviewed head SHA in the JSON sha field.",
+    });
+  }
+
   const reactionWrite =
     isGitHubApiUrl(input.upstreamUrl) &&
     (input.method === "POST" || input.method === "DELETE") &&
