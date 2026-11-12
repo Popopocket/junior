@@ -9,6 +9,7 @@ import {
   type AgentLoopTurnUpdate,
   type AgentTool,
 } from "@earendil-works/pi-agent-core";
+import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import type { ResumeState } from "@/chat/agent/resume";
 import { REPORT_BLOCKED_TOOL_NAME } from "@/chat/agent-invocations/blocked-report";
 import { FINISH_AUTOMATION_RUN_TOOL_NAME } from "@/chat/automation-result";
@@ -19,7 +20,7 @@ import {
   setSpanAttributes,
 } from "@/chat/logging";
 import { profileConfig, type ModelProfile } from "@/chat/model-profile";
-import { completeText, resolveGatewayModel } from "@/chat/pi/client";
+import { completeText, resolveCompletionModel } from "@/chat/pi/client";
 import type { PiMessage } from "@/chat/pi/messages";
 import {
   isAssistantMessage,
@@ -43,7 +44,7 @@ import { hasAgentTurnUsage, type AgentTurnUsage } from "@/chat/usage";
 /** Staged handoff waiting for the next Pi turn boundary. */
 export type PendingHandoff = {
   messages: PiMessage[];
-  model: ReturnType<typeof resolveGatewayModel>;
+  model: Model<Api>;
   modelId: string;
   modelProfile: ModelProfile;
   phaseUsage?: AgentTurnUsage;
@@ -214,7 +215,7 @@ export async function commitHandoff(args: {
         };
   return {
     messages: handoffMessages,
-    model: resolveGatewayModel(target.modelId),
+    model: resolveCompletionModel(target.modelId),
     modelId: target.modelId,
     modelProfile: args.profile,
     phaseUsage,

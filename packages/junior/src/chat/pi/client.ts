@@ -5,13 +5,24 @@ import {
   registerApiProvider,
   streamAnthropic,
   streamSimpleAnthropic,
+  streamOpenAICompletions,
+  streamSimpleOpenAICompletions,
+  streamOpenAIResponses,
+  streamSimpleOpenAIResponses,
+  type Api,
   type CacheRetention,
   type Message,
   type Model,
   type ThinkingLevel,
 } from "@/chat/pi/sdk";
 import { createGatewayProvider } from "@ai-sdk/gateway";
-import { resolveGatewayCredential } from "@/chat/pi/gateway-auth";
+import { createOpenAI } from "@ai-sdk/openai";
+import { completionEndpointConfig } from "@/chat/pi/completion-config";
+import { completionStreamOptions } from "@/chat/pi/completion-options";
+import {
+  resolveGatewayCredential,
+  type GatewayCredential,
+} from "@/chat/pi/gateway-auth";
 
 export {
   getGatewayApiKey,
@@ -32,7 +43,7 @@ import {
   type LanguageModelUsage,
 } from "ai";
 
-// Directly register the anthropic provider at import time. pi-ai's built-in
+// Directly register completion providers at import time. pi-ai's built-in
 // registration relies on opaque dynamic import() calls that break under
 // Nitro's rolldown bundler (the lazy import paths resolve relative to the
 // bundled chunk, not the original module).
@@ -40,6 +51,16 @@ registerApiProvider({
   api: "anthropic-messages",
   stream: streamAnthropic,
   streamSimple: streamSimpleAnthropic,
+});
+registerApiProvider({
+  api: "openai-completions",
+  stream: streamOpenAICompletions,
+  streamSimple: streamSimpleOpenAICompletions,
+});
+registerApiProvider({
+  api: "openai-responses",
+  stream: streamOpenAIResponses,
+  streamSimple: streamSimpleOpenAIResponses,
 });
 import type { ZodTypeAny, z } from "zod";
 import {
@@ -262,6 +283,71 @@ export function resolveGatewayModel(modelId: string): Model<any> {
   };
 }
 
+/** Resolve ordinary completions independently of Gateway-only operations. */
+export function resolveCompletionModel(modelId: string): Model<Api> {
+  const endpoint = completionEndpointConfig;
+  if (!endpoint) return resolveGatewayModel(modelId);
+  const metadata = Object.hasOwn(endpoint.models, modelId)
+    ? endpoint.models[modelId]
+    : undefined;
+  if (!metadata) throw new Error(`Unknown completion model id: ${modelId}`);
+  return {
+    ...metadata,
+    input: [...metadata.input],
+    thinkingLevelMap: {
+      // Unset effort must not force "none"; reasoning-only models can reject it.
+      off: null,
+      minimal: "minimal",
+      low: "low",
+      medium: "medium",
+      high: "high",
+      xhigh: "xhigh",
+      max: "max",
+    },
+    id: modelId,
+    name: modelId,
+    provider: "openai-compatible",
+    api:
+      endpoint.api === "responses" ? "openai-responses" : "openai-completions",
+    baseUrl: endpoint.baseURL,
+  };
+}
+
+/** Use only the configured completion token when custom routing is enabled. */
+export async function resolveCompletionCredential(): Promise<
+  GatewayCredential | { token: string; mode: "custom_token" }
+> {
+  return completionEndpointConfig
+    ? { token: completionEndpointConfig.apiKey, mode: "custom_token" }
+    : resolveGatewayCredential();
+}
+
+/** Resolve ordinary-completion auth for Pi provider calls. */
+export async function getCompletionApiKey(): Promise<string> {
+  return (await resolveCompletionCredential()).token;
+}
+
+/** Describe a completion destination without exposing paths or credentials. */
+export function completionTraceAttributes(model: Model<Api>): {
+  "gen_ai.provider.name": string;
+  "server.address": string;
+  "server.port": number;
+} {
+  if (model.provider === GATEWAY_PROVIDER) {
+    return {
+      "gen_ai.provider.name": GEN_AI_PROVIDER_NAME,
+      "server.address": GEN_AI_SERVER_ADDRESS,
+      "server.port": GEN_AI_SERVER_PORT,
+    };
+  }
+  const url = new URL(model.baseUrl);
+  return {
+    "gen_ai.provider.name": model.provider,
+    "server.address": url.hostname,
+    "server.port": Number(url.port || (url.protocol === "https:" ? 443 : 80)),
+  };
+}
+
 /** Execute a direct chat completion inside a dedicated `gen_ai.chat` span. */
 export async function completeText(params: {
   modelId: string;
@@ -276,8 +362,12 @@ export async function completeText(params: {
   metadata?: Record<string, unknown>;
   promptName?: string;
 }) {
-  const model = resolveGatewayModel(params.modelId);
-  const credential = await resolveGatewayCredential();
+  const model = resolveCompletionModel(params.modelId);
+  const context = { systemPrompt: params.system, messages: params.messages };
+  const options = completionStreamOptions(model, context, {
+    maxTokens: params.maxTokens,
+  });
+  const credential = await resolveCompletionCredential();
   const apiKey = credential.token;
   const authMode = credential.mode;
   const effectivePrivacy = getCurrentConversationPrivacy() ?? "private";
@@ -293,15 +383,13 @@ export async function completeText(params: {
       ? serializeGenAiAttribute([{ type: "text", content: params.system }])
       : undefined;
   const baseAttributes = {
-    "gen_ai.provider.name": GEN_AI_PROVIDER_NAME,
+    ...completionTraceAttributes(model),
     "gen_ai.operation.name": GEN_AI_OPERATION_CHAT,
     "gen_ai.request.model": params.modelId,
     "gen_ai.output.type": "text",
     ...(params.promptName
       ? { "gen_ai.prompt.name": params.promptName }
       : undefined),
-    "server.address": GEN_AI_SERVER_ADDRESS,
-    "server.port": GEN_AI_SERVER_PORT,
     ...(hasCompactedConversationContext(params.messages)
       ? { "gen_ai.conversation.compacted": true }
       : undefined),
@@ -312,8 +400,8 @@ export async function completeText(params: {
     ...(params.temperature !== undefined
       ? { "gen_ai.request.temperature": params.temperature }
       : undefined),
-    ...(params.maxTokens !== undefined
-      ? { "gen_ai.request.max_tokens": params.maxTokens }
+    ...(options.maxTokens !== undefined
+      ? { "gen_ai.request.max_tokens": options.maxTokens }
       : undefined),
   };
   const startAttributes = {
@@ -337,22 +425,15 @@ export async function completeText(params: {
     async (setSpanAttributes) => {
       let message: Awaited<ReturnType<typeof completeSimple>>;
       try {
-        message = await completeSimple(
-          model,
-          {
-            systemPrompt: params.system,
-            messages: params.messages,
-          },
-          {
-            apiKey,
-            temperature: params.temperature,
-            maxTokens: params.maxTokens,
-            reasoning: params.thinkingLevel,
-            cacheRetention: params.cacheRetention,
-            signal: params.signal,
-            metadata: params.metadata,
-          },
-        );
+        message = await completeSimple(model, context, {
+          apiKey,
+          temperature: params.temperature,
+          ...options,
+          reasoning: params.thinkingLevel,
+          cacheRetention: params.cacheRetention,
+          signal: params.signal,
+          metadata: params.metadata,
+        });
       } catch (error) {
         throw createProviderError(error, { modelId: params.modelId });
       }
@@ -452,7 +533,7 @@ function objectCompletionCost(
     return undefined;
   }
 
-  return calculateCost(resolveGatewayModel(modelId), {
+  return calculateCost(resolveCompletionModel(modelId), {
     input: input ?? 0,
     output: usage.outputTokens ?? 0,
     cacheRead: cacheRead ?? 0,
@@ -500,8 +581,20 @@ export async function completeObject<TSchema extends ZodTypeAny>(params: {
   metadata?: Record<string, unknown>;
   promptName?: string;
 }): Promise<{ costUsd?: number; object: z.infer<TSchema> }> {
-  const credential = await resolveGatewayCredential();
-  const provider = createGatewayProvider({ apiKey: credential.token });
+  const endpoint = completionEndpointConfig;
+  const model = endpoint ? resolveCompletionModel(params.modelId) : undefined;
+  const maxTokens = model
+    ? Math.min(params.maxTokens ?? model.maxTokens, model.maxTokens)
+    : params.maxTokens;
+  const credential = await resolveCompletionCredential();
+  const provider = endpoint
+    ? createOpenAI({ baseURL: endpoint.baseURL, apiKey: credential.token })
+    : undefined;
+  const languageModel = provider
+    ? endpoint?.api === "responses"
+      ? provider.responses(params.modelId)
+      : provider.chat(params.modelId)
+    : createGatewayProvider({ apiKey: credential.token }).chat(params.modelId);
   let result: GenerateObjectResult<unknown>;
   try {
     result = await withSpan(
@@ -510,7 +603,7 @@ export async function completeObject<TSchema extends ZodTypeAny>(params: {
       logContextFromMetadata(params.modelId, params.metadata),
       async (setSpanAttributes) => {
         const result = await generateObject({
-          model: provider.chat(params.modelId),
+          model: languageModel,
           schema: params.schema,
           prompt: params.prompt,
           ...(params.system !== undefined
@@ -519,11 +612,28 @@ export async function completeObject<TSchema extends ZodTypeAny>(params: {
           ...(params.temperature !== undefined
             ? { temperature: params.temperature }
             : undefined),
-          ...(params.maxTokens !== undefined
-            ? { maxOutputTokens: params.maxTokens }
+          ...(maxTokens !== undefined
+            ? { maxOutputTokens: maxTokens }
             : undefined),
           ...(params.signal !== undefined
             ? { abortSignal: params.signal }
+            : undefined),
+          ...(endpoint && model
+            ? {
+                providerOptions: {
+                  openai: {
+                    forceReasoning: model.reasoning,
+                    ...(model.reasoning && params.thinkingLevel
+                      ? {
+                          reasoningEffort: params.thinkingLevel,
+                        }
+                      : undefined),
+                    ...(endpoint.api === "responses"
+                      ? { store: false }
+                      : undefined),
+                  },
+                },
+              }
             : undefined),
         });
         setSpanAttributes({
@@ -533,15 +643,19 @@ export async function completeObject<TSchema extends ZodTypeAny>(params: {
         return result;
       },
       {
-        "gen_ai.provider.name": GEN_AI_PROVIDER_NAME,
+        ...(model
+          ? completionTraceAttributes(model)
+          : {
+              "gen_ai.provider.name": GEN_AI_PROVIDER_NAME,
+              "server.address": GEN_AI_SERVER_ADDRESS,
+              "server.port": GEN_AI_SERVER_PORT,
+            }),
         "gen_ai.operation.name": GEN_AI_OPERATION_CHAT,
         "gen_ai.request.model": params.modelId,
         "gen_ai.output.type": "json",
         ...(params.promptName
           ? { "gen_ai.prompt.name": params.promptName }
           : undefined),
-        "server.address": GEN_AI_SERVER_ADDRESS,
-        "server.port": GEN_AI_SERVER_PORT,
         "gen_ai.provider.auth_mode": credential.mode,
         ...(params.thinkingLevel
           ? { "gen_ai.request.reasoning.level": params.thinkingLevel }
@@ -549,8 +663,8 @@ export async function completeObject<TSchema extends ZodTypeAny>(params: {
         ...(params.temperature !== undefined
           ? { "gen_ai.request.temperature": params.temperature }
           : undefined),
-        ...(params.maxTokens !== undefined
-          ? { "gen_ai.request.max_tokens": params.maxTokens }
+        ...(maxTokens !== undefined
+          ? { "gen_ai.request.max_tokens": maxTokens }
           : undefined),
       },
     );

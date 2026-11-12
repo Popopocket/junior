@@ -203,10 +203,10 @@ vi.mock("@/chat/config", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/chat/config")>();
   const memoryConfig = original.readChatConfig({
     ...process.env,
-    AI_FAST_MODEL: "test-fast-model",
-    AI_HANDOFF_MODEL: "test-handoff-model",
-    AI_MODEL: "test-model",
-    AI_MODEL_PROFILES: JSON.stringify({ standard: "test-model" }),
+    AI_FAST_MODEL: "openai/gpt-5.4-mini",
+    AI_HANDOFF_MODEL: "openai/gpt-5.4",
+    AI_MODEL: "openai/gpt-5.4",
+    AI_MODEL_PROFILES: JSON.stringify({ standard: "openai/gpt-5.4" }),
     JUNIOR_STATE_ADAPTER: "memory",
   });
   return {
@@ -217,10 +217,8 @@ vi.mock("@/chat/config", async (importOriginal) => {
   };
 });
 
-vi.mock("@/chat/pi/client", () => ({
-  GEN_AI_PROVIDER_NAME: "test-provider",
-  GEN_AI_SERVER_ADDRESS: "ai-gateway.vercel.sh",
-  GEN_AI_SERVER_PORT: 443,
+vi.mock("@/chat/pi/client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/chat/pi/client")>()),
   completeObject: async ({ prompt }: { prompt: string }) => {
     const instructionMatch = prompt.match(
       /<current-instruction>\n([\s\S]*?)\n<\/current-instruction>/,
@@ -275,8 +273,7 @@ vi.mock("@/chat/pi/client", () => ({
       },
     };
   },
-  getGatewayApiKey: () => "unauthenticated",
-  resolveGatewayModel: (modelId: string) => ({ id: modelId }),
+  getCompletionApiKey: () => "unauthenticated",
 }));
 
 vi.mock("@/chat/prompt", async (importOriginal) => ({

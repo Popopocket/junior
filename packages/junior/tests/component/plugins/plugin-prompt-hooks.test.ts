@@ -95,10 +95,8 @@ vi.mock("@earendil-works/pi-agent-core", async (importOriginal) => {
   return { ...actual, Agent: MockAgent };
 });
 
-vi.mock("@/chat/pi/client", () => ({
-  GEN_AI_PROVIDER_NAME: "vercel-ai-gateway",
-  GEN_AI_SERVER_ADDRESS: "ai-gateway.vercel.sh",
-  GEN_AI_SERVER_PORT: 443,
+vi.mock("@/chat/pi/client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/chat/pi/client")>()),
   completeObject: async () => ({
     object: {
       reasoning_level: "medium",
@@ -107,8 +105,7 @@ vi.mock("@/chat/pi/client", () => ({
       reason: "test-router",
     },
   }),
-  getGatewayApiKey: () => "test-gateway-key",
-  resolveGatewayModel: (modelId: string) => ({ id: modelId }),
+  getCompletionApiKey: () => "test-gateway-key",
 }));
 
 import {

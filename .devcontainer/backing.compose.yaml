@@ -1,0 +1,10 @@
+services:
+  postgres:
+    ports: !override
+      - "127.0.0.1:${JUNIOR_DEV_POSTGRES_PORT:-55432}:5432"
+  redis:
+    ports: !override
+      - "127.0.0.1:${JUNIOR_DEV_REDIS_PORT:-56379}:6379"
+  s3:
+    ports: !override
+      - "127.0.0.1:${JUNIOR_DEV_S3_PORT:-57070}:7070"

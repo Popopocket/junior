@@ -1,3 +1,5 @@
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import {
   buildNonInteractiveShellScript,
@@ -29,8 +31,7 @@ describe("non-interactive shell commands", () => {
     expect(script).toContain("echo ok");
   });
 
-  it("adds command Git config before the runtime Git config", async () => {
-    const { spawnSync } = await import("node:child_process");
+  it("adds command Git config before the runtime Git config", () => {
     const script = buildNonInteractiveShellScript(
       "git config core.hooksPath && git config credential.helper; git config http.emptyAuth",
       {
@@ -44,7 +45,7 @@ describe("non-interactive shell commands", () => {
       },
     );
 
-    const result = spawnSync("bash", ["-c", script]);
+    const result = spawnSync("bash", ["-c", script], { cwd: tmpdir() });
 
     expect(result.stderr.toString()).toBe("");
     expect(result.stdout.toString()).toBe("/junior/git-hooks\n\ntrue\n");

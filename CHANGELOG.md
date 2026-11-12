@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Support explicitly requested GitHub pull request merges through REST, pinned to the reviewed head SHA.
+
 ## 0.275.0
 
 ### New Features ✨

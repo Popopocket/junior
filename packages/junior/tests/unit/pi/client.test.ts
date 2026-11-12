@@ -17,7 +17,13 @@ const mocks = vi.hoisted(() => ({
   })),
   embedMany: vi.fn(),
   generateObject: vi.fn(),
-  getModels: vi.fn(() => [{ id: "openai/gpt-4o-mini" }]),
+  getModels: vi.fn(() => [
+    {
+      id: "openai/gpt-4o-mini",
+      provider: "vercel-ai-gateway",
+      baseUrl: "https://ai-gateway.vercel.sh",
+    },
+  ]),
   logException: vi.fn(),
   logWarn: vi.fn(),
   noObjectGeneratedErrorIsInstance: vi.fn(),
@@ -27,6 +33,10 @@ const mocks = vi.hoisted(() => ({
   setSpanAttributes: vi.fn(),
   streamAnthropic: vi.fn(),
   streamSimpleAnthropic: vi.fn(),
+  streamOpenAICompletions: vi.fn(),
+  streamSimpleOpenAICompletions: vi.fn(),
+  streamOpenAIResponses: vi.fn(),
+  streamSimpleOpenAIResponses: vi.fn(),
   withSpan: vi.fn(
     async (
       _name: string,
@@ -47,6 +57,10 @@ vi.mock("@/chat/pi/sdk", () => ({
   registerApiProvider: mocks.registerApiProvider,
   streamAnthropic: mocks.streamAnthropic,
   streamSimpleAnthropic: mocks.streamSimpleAnthropic,
+  streamOpenAICompletions: mocks.streamOpenAICompletions,
+  streamSimpleOpenAICompletions: mocks.streamSimpleOpenAICompletions,
+  streamOpenAIResponses: mocks.streamOpenAIResponses,
+  streamSimpleOpenAIResponses: mocks.streamSimpleOpenAIResponses,
 }));
 
 vi.mock("@/chat/pi/gateway-auth", () => ({

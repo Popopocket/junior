@@ -1095,12 +1095,28 @@ describe("sandbox egress proxy integration", () => {
     expect(upstreamFetch).toHaveBeenCalledTimes(1);
   });
 
-  it("uses GitHub App installation credentials for workflow dispatch", async () => {
+  it.each([
+    {
+      name: "workflow dispatch",
+      method: "POST",
+      upstreamPath:
+        "/repos/getsentry/junior/actions/workflows/release.yml/dispatches",
+      body: '{"ref":"main","inputs":{"bump":"minor"}}',
+    },
+    {
+      name: "SHA-pinned pull request merge",
+      method: "PUT",
+      upstreamPath: "/repos/getsentry/junior/pulls/780/merge",
+      body: '{"sha":"0123456789abcdef0123456789abcdef01234567","merge_method":"squash"}',
+    },
+  ])("uses GitHub App installation credentials for $name", async ({ method, upstreamPath, body }) => {
     configureGitHubAppEnv();
     const tokenRequests = mockGitHubInstallationToken();
     await registerGitHubPlugin({
       appPermissions: {
         actions: "write",
+        contents: "write",
+        pull_requests: "write",
       },
     });
     const credentialToken = modules.session.createSandboxEgressCredentialToken({
@@ -1114,10 +1130,8 @@ describe("sandbox egress proxy integration", () => {
     const forwardURL = forwardUrlFor(networkPolicy, GITHUB_API_HOST);
     const upstreamFetch = vi.fn(
       async (url: URL | string, init?: RequestInit) => {
-        expect(String(url)).toBe(
-          "https://api.github.com/repos/getsentry/junior/actions/workflows/release.yml/dispatches",
-        );
-        expect(init?.method).toBe("POST");
+        expect(String(url)).toBe(`https://api.github.com${upstreamPath}`);
+        expect(init?.method).toBe(method);
         expect(new Headers(init?.headers).get("authorization")).toBe(
           "Bearer installation-token",
         );
@@ -1127,12 +1141,11 @@ describe("sandbox egress proxy integration", () => {
 
     const response = await modules.vercel.proxyVercelSandboxEgressRequest(
       proxiedRequest({
-        body: JSON.stringify({ ref: "main", inputs: { bump: "minor" } }),
+        body,
         forwardURL,
-        method: "POST",
+        method,
         upstreamHost: GITHUB_API_HOST,
-        upstreamPath:
-          "/repos/getsentry/junior/actions/workflows/release.yml/dispatches",
+        upstreamPath,
       }),
       {
         fetch: upstreamFetch as typeof fetch,

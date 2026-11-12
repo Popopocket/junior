@@ -59,7 +59,8 @@ vi.mock("@/db/executor", () => ({
   }),
 }));
 
-vi.mock("@/chat/pi/client", () => ({
+vi.mock("@/chat/pi/client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/chat/pi/client")>()),
   completeObject: vi.fn(async () => ({
     object: {
       canonicalFact: "Prefers terse status updates.",
@@ -75,8 +76,6 @@ vi.mock("@/chat/pi/client", () => ({
     provider: "test-provider",
     vectors: texts.map(() => [1]),
   })),
-  GEN_AI_PROVIDER_NAME: "test-provider",
-  resolveGatewayModel: vi.fn((modelId: string) => modelId),
 }));
 
 afterEach(async () => {

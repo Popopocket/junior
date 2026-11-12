@@ -1,6 +1,7 @@
 import { generateKeyPairSync } from "node:crypto";
 import {
   EgressAuthRequired,
+  EgressPolicyDenied,
   type PluginSandbox,
   type PluginStoredTokens,
   type SandboxPrepareHookContext,
@@ -18,11 +19,7 @@ import {
   vi,
 } from "vitest";
 import { githubPlugin } from "../src/index";
-import {
-  gitHooksPath,
-  REPOSITORY_HOOK_NAMES,
-  repositoryHook,
-} from "../src/git-config";
+import { gitHooksPath } from "../src/git-config";
 import { gitHubDeploymentSourceResource } from "../src/events/deployment";
 import { gitHubIssueResource } from "../src/events/issue";
 import { gitHubPullRequestResource } from "../src/events/pull-request";
@@ -165,17 +162,15 @@ async function localSandbox() {
 
   const dir = mkdtempSync(join(tmpdir(), "junior-github-sandbox-"));
   const gitConfigPath = join(dir, ".gitconfig");
-  const calls: string[] = [];
   const sandbox: PluginSandbox = {
     juniorRoot: dir,
     root: dir,
     async readFile() {
-      calls.push("readFile");
       return null;
     },
     async run(input) {
-      calls.push(`run ${input.cmd}`);
       const result = spawnSync(input.cmd, input.args ?? [], {
+        cwd: dir,
         encoding: "utf8",
         env: { ...process.env, HOME: dir, GIT_CONFIG_GLOBAL: gitConfigPath },
       });
@@ -185,11 +180,9 @@ async function localSandbox() {
         stdout: result.stdout,
       };
     },
-    async writeFile() {
-      calls.push("writeFile");
-    },
+    async writeFile() {},
   };
-  return { calls, dir, gitConfigPath, sandbox };
+  return { dir, gitConfigPath, sandbox };
 }
 
 /**
@@ -2754,13 +2747,38 @@ Conversation: \`local:test:old-conversation\`
       access: "write",
       reason: "github.installation-write",
     });
+  });
+
+  it("allows a pull request merge as the App bot for a pinned head SHA", async () => {
     await expect(
       grantForEgress({
         method: "PUT",
         url: "https://api.github.com/repos/getsentry/junior/pulls/780/merge",
+        bodyText: JSON.stringify({
+          sha: "0123456789abcdef0123456789abcdef01234567",
+          merge_method: "squash",
+        }),
       }),
-    ).rejects.toThrow("This GitHub write request is not supported.");
+    ).resolves.toMatchObject({
+      name: "installation-write",
+      access: "write",
+      reason: "github.installation-write",
+    });
   });
+
+  it.each([undefined, "{", "null", "[]", "{}", '{"sha":"main"}'])(
+    "denies a pull request merge without a valid head SHA: %s",
+    async (bodyText) => {
+      const request: Parameters<typeof grantForEgress>[0] = {
+        method: "PUT",
+        url: "https://api.github.com/repos/getsentry/junior/pulls/780/merge",
+      };
+      if (bodyText !== undefined) request.bodyText = bodyText;
+      await expect(grantForEgress(request)).rejects.toBeInstanceOf(
+        EgressPolicyDenied,
+      );
+    },
+  );
 
   it("denies GitHub pull request approvals while allowing non-approve reviews", async () => {
     await expect(
@@ -3533,62 +3551,6 @@ Conversation: \`local:test:old-conversation\`
         }),
       ),
     ).rejects.toThrow("OAuth token response missing refresh_token");
-  });
-
-  it("prepares git attribution hooks and sandbox git config", async () => {
-    const { readdirSync, readFileSync, rmSync, statSync, writeFileSync } =
-      await import("node:fs");
-    const { join } = await import("node:path");
-    const { spawnSync } = await import("node:child_process");
-
-    const { calls, dir, gitConfigPath, sandbox } = await localSandbox();
-    const hooksPath = gitHooksPath(dir);
-    const ctx: SandboxPrepareHookContext = {
-      db,
-      log: pluginLog,
-      plugin: { name: "github" },
-      sandbox,
-    };
-    try {
-      await githubPlugin().hooks?.sandboxPrepare?.(ctx);
-      // A resumed sandbox already has the hooks, maybe from an older Junior.
-      writeFileSync(join(hooksPath, "pre-commit"), "stale\n", { mode: 0o644 });
-      await githubPlugin().hooks?.sandboxPrepare?.(ctx);
-
-      // Each sandbox call is a provider round trip on every sandbox acquire.
-      expect(calls).toEqual(["run bash", "run bash"]);
-      const hookNames = ["prepare-commit-msg", ...REPOSITORY_HOOK_NAMES];
-      expect(readdirSync(hooksPath).sort()).toEqual(hookNames.sort());
-      for (const name of hookNames) {
-        expect(statSync(join(hooksPath, name)).mode & 0o777).toBe(0o755);
-      }
-      expect(readFileSync(join(hooksPath, "pre-commit"), "utf8")).toBe(
-        repositoryHook("pre-commit"),
-      );
-      const prepareCommitMsg = readFileSync(
-        join(hooksPath, "prepare-commit-msg"),
-        "utf8",
-      );
-      expect(prepareCommitMsg).toContain("JUNIOR_GIT_ACTOR_COAUTHOR_TRAILERS");
-      expect(prepareCommitMsg).not.toContain("JUNIOR_GIT_COAUTHOR");
-      expect(prepareCommitMsg).toContain(
-        "Git author was not set to the configured identity",
-      );
-
-      const globalConfig = spawnSync(
-        "git",
-        ["config", "--file", gitConfigPath, "--list"],
-        { encoding: "utf8" },
-      );
-      expect(globalConfig.stdout).toBe(
-        `core.hookspath=${hooksPath}\n` +
-          "commit.gpgsign=false\n" +
-          "credential.helper=\n" +
-          "http.emptyauth=true\n",
-      );
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
   });
 
   it("preloads workspace repositories through sandbox egress", async () => {

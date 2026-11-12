@@ -69,7 +69,7 @@ describe("context compaction retained messages", () => {
         getConversationContextCompactionTriggerTokens,
         getModelContextBudget,
       } = await import("@/chat/services/context-budget");
-      const { resolveGatewayModel } = await import("@/chat/pi/client");
+      const { resolveCompletionModel } = await import("@/chat/pi/client");
 
       expect(getAgentContextCompactionTriggerTokens("openai/gpt-5.4")).toBe(
         180_000,
@@ -79,7 +79,7 @@ describe("context compaction retained messages", () => {
       });
       expect(getConversationContextCompactionTriggerTokens()).toBe(
         calculateContextCompactionTriggerTokens({
-          ...resolveGatewayModel("openai/gpt-5.4-mini"),
+          ...resolveCompletionModel("openai/gpt-5.4-mini"),
           contextWindow: 200_000,
         }),
       );
@@ -98,8 +98,8 @@ describe("context compaction retained messages", () => {
     try {
       const { getModelContextBudget } =
         await import("@/chat/services/context-budget");
-      const { resolveGatewayModel } = await import("@/chat/pi/client");
-      const model = resolveGatewayModel("anthropic/claude-haiku-4.5");
+      const { resolveCompletionModel } = await import("@/chat/pi/client");
+      const model = resolveCompletionModel("anthropic/claude-haiku-4.5");
 
       expect(getModelContextBudget(model.id).contextWindow).toBe(
         model.contextWindow,

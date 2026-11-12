@@ -14,8 +14,8 @@ import {
 import { closeDb, getConversationStore, getSqlExecutor } from "@/chat/db";
 import { createConversationWorkQueueTestAdapter } from "../fixtures/conversation-work";
 
-// The `s3` service in compose.yaml and in CI runs versitygw on this port.
-const S3_ENDPOINT = "http://localhost:7072";
+// Reuse local S3 config; the default matches root Compose and CI.
+const S3_ENDPOINT = process.env.JUNIOR_S3_ENDPOINT ?? "http://localhost:7072";
 const S3_ACCESS_KEY_ID = "junior";
 const S3_SECRET_ACCESS_KEY = "junior-secret";
 const S3_BUCKET = `junior-test-${process.pid}-${Date.now()}`;

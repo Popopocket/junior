@@ -1,6 +1,6 @@
 import type { Tool } from "@earendil-works/pi-ai";
 import { botConfig } from "@/chat/config";
-import { resolveGatewayModel } from "@/chat/pi/client";
+import { resolveCompletionModel } from "@/chat/pi/client";
 
 const COMPACTION_TRIGGER_RATIO = 0.9;
 const CONTEXT_INPUT_LIMIT_RATIO = 0.95;
@@ -65,18 +65,22 @@ export function calculateContextCompactionTargetTokens(
   return Math.max(1, Math.floor(triggerTokens * COMPACTION_TARGET_RATIO));
 }
 
-/** Cap one model's advertised context capacity with the host bot configuration. */
+/** Cap model input capacity with the host limit and reserve custom output space. */
 export function getModelContextBudget(modelId: string): ModelContextBudget {
-  const model = resolveGatewayModel(modelId);
+  const model = resolveCompletionModel(modelId);
   const advertisedContextWindow = positiveInteger(
     model.contextWindow,
     FALLBACK_CONTEXT_WINDOW_TOKENS,
   );
+  const contextWindow = Math.min(
+    botConfig.contextWindowTokens,
+    advertisedContextWindow,
+  );
   return {
-    contextWindow: Math.min(
-      botConfig.contextWindowTokens,
-      advertisedContextWindow,
-    ),
+    contextWindow:
+      model.provider === "openai-compatible"
+        ? Math.max(1, contextWindow - model.maxTokens)
+        : contextWindow,
   };
 }
 

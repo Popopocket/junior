@@ -70,6 +70,7 @@ const UPSTREAM_TOKEN_REJECTION_STATUS = 401;
 const UPSTREAM_PERMISSION_REJECTION_STATUS = 403;
 const GRANT_SELECTION_BODY_TEXT_LIMIT_BYTES = 64 * 1024;
 const RESPONSE_BODY_TEXT_LIMIT_BYTES = 64 * 1024;
+const JSON_CONTENT_TYPE = /^application\/(?:[^;]+\+)?json(?:\s*;|$)/i;
 
 /**
  * Intercepts the already-authenticated provider request before live forwarding.
@@ -621,13 +622,16 @@ export async function executeCredentialedEgressRequest(input: {
       }),
     );
   }
-  const bodyForGrantSelection = githubBodyInspection({
-    provider,
-    requestMethod: request.method,
-    upstreamUrl,
-  })
-    ? body
-    : undefined;
+  // Provider hooks inspect bounded JSON bodies; binary uploads stay opaque.
+  const bodyForGrantSelection =
+    JSON_CONTENT_TYPE.test(request.headers.get("content-type") ?? "") ||
+    githubBodyInspection({
+      provider,
+      requestMethod: request.method,
+      upstreamUrl,
+    })
+      ? body
+      : undefined;
   let grantSelection: SandboxEgressGrantSelection;
   try {
     grantSelection = await selectSandboxEgressGrant({

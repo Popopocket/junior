@@ -1,0 +1,60 @@
+name: ${COMPOSE_PROJECT_NAME:-junior-devcontainer}
+
+services:
+  devcontainer:
+    build:
+      context: ./.devcontainer
+      dockerfile: Dockerfile
+    init: true
+    network_mode: host
+    working_dir: /workspaces/junior
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      s3:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      HOME: /home/node
+      COMPOSE_FILE: /workspaces/junior/compose.yaml:/workspaces/junior/.devcontainer/backing.compose.yaml
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-junior-devcontainer}
+      JUNIOR_DEV_POSTGRES_PORT: ${JUNIOR_DEV_POSTGRES_PORT:-55432}
+      JUNIOR_DEV_REDIS_PORT: ${JUNIOR_DEV_REDIS_PORT:-56379}
+      JUNIOR_DEV_S3_PORT: ${JUNIOR_DEV_S3_PORT:-57070}
+      PORT: ${JUNIOR_DEV_APP_PORT:-3300}
+      HOST: 127.0.0.1
+      NITRO_HOST: 127.0.0.1
+      DATABASE_URL: postgres://junior:junior@127.0.0.1:${JUNIOR_DEV_POSTGRES_PORT:-55432}/junior
+      JUNIOR_DATABASE_DRIVER: postgres
+      REDIS_URL: redis://127.0.0.1:${JUNIOR_DEV_REDIS_PORT:-56379}
+      JUNIOR_QUEUE_PROVIDER: bullmq
+      JUNIOR_QUEUE_REDIS_URL: redis://127.0.0.1:${JUNIOR_DEV_REDIS_PORT:-56379}
+      JUNIOR_STATE_ADAPTER: redis
+      JUNIOR_ATTACHMENT_STORAGE_PROVIDER: s3
+      JUNIOR_S3_ENDPOINT: http://127.0.0.1:${JUNIOR_DEV_S3_PORT:-57070}
+      JUNIOR_S3_BUCKET: junior-attachments
+      JUNIOR_S3_ACCESS_KEY_ID: junior
+      JUNIOR_S3_SECRET_ACCESS_KEY: junior-secret
+      JUNIOR_SANDBOX_PROVIDER: docker
+      # Never start a tunnel or change host Git hooks implicitly.
+      CLOUDFLARE_TUNNEL_TOKEN: ""
+      OPEN_SPOTLIGHT_WEB: "0"
+      SKIP_INSTALL_SIMPLE_GIT_HOOKS: "1"
+      pnpm_config_store_dir: /home/node/.local/share/pnpm/store
+    volumes:
+      - type: bind
+        source: .
+        target: /workspaces/junior
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+      - type: volume
+        source: junior-pnpm-store
+        target: /home/node/.local/share/pnpm
+        volume:
+          nocopy: true
+
+volumes:
+  junior-pnpm-store:

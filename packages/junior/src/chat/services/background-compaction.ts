@@ -39,7 +39,7 @@ import {
   withLogContext,
 } from "@/chat/logging";
 import type { ModelProfile } from "@/chat/model-profile";
-import { getGatewayApiKey, resolveGatewayModel } from "@/chat/pi/client";
+import { getCompletionApiKey, resolveCompletionModel } from "@/chat/pi/client";
 import { projectConversationEvents } from "@/chat/pi/conversation-events";
 import { createTracedStreamFn } from "@/chat/pi/traced-stream";
 import { QUEUE_SIGNATURE_MAX_AGE_MS } from "@/chat/queue/sign";
@@ -433,12 +433,12 @@ async function prepareSummary(
         // The live agent sets only these request options. Keep them equal,
         // or the request prefix differs and the provider cache misses.
         const agent = new Agent({
-          getApiKey: getGatewayApiKey,
+          getApiKey: getCompletionApiKey,
           sessionId: message.conversationId,
           streamFn: summaryStreamFn,
           initialState: {
             systemPrompt: snapshot.systemPrompt,
-            model: resolveGatewayModel(snapshot.modelId),
+            model: resolveCompletionModel(snapshot.modelId),
             thinkingLevel: snapshot.thinkingLevel,
             tools: snapshot.tools.map((tool) => ({
               ...tool,

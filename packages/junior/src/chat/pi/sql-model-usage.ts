@@ -139,11 +139,12 @@ export async function readConversationModelUsageFromSql(
   executor: JuniorSqlDatabase,
   options: { conversationId: string },
 ): Promise<Array<{ modelId: string; usage: AgentTurnUsage }>> {
-  // Prefer the model field when it already carries a vendor prefix so usage keys
-  // match turn_routed/handoff model ids (openai/gpt-5.6-sol), not the transport
-  // provider concatenated onto that id (vercel-ai-gateway/openai/gpt-5.6-sol).
+  // Custom endpoints can reuse a Gateway wire ID. Keep their usage separate
+  // without changing historical Gateway IDs or the model sent on the wire.
   const modelText = sql`(${model} #>> '{}')`;
   const modelId = sql<string>`case
+    when ${provider} #>> '{}' = 'openai-compatible'
+      then concat('openai-compatible/', ${modelText})
     when position('/' in coalesce(${modelText}, '')) > 0
       then ${modelText}
     else concat(${provider} #>> '{}', '/', ${modelText})

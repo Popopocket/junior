@@ -77,7 +77,6 @@
     "packages/junior/tests/unit/services/plan-continuation.test.ts": 2,
     "packages/junior/tests/unit/services/provider-retry.test.ts": 3,
     "packages/junior/tests/unit/services/short-title.test.ts": 5,
-    "packages/junior/tests/unit/tools/execution/tool-error-handler.test.ts": 1,
     "packages/junior/tests/unit/web/image-generate.test.ts": 2
   },
   "runtime-config-mutation": {
